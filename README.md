@@ -1,5 +1,7 @@
 # Tabs Mgr.
 
+![Tabs Mgr. preview](image/tabs.png)
+
 本地运行的 Chrome 新标签页管理面板。
 
 ## Fork 声明
