@@ -11,6 +11,7 @@
    3. Renders domain cards, banners, and stats
    4. Handles all user actions (close tabs, save for later, focus tab)
    5. Stores "Saved for Later" tabs in chrome.storage.local (no server)
+   6. Refreshes the dashboard manually or on an optional local interval
    ================================================================ */
 
 'use strict';
@@ -25,6 +26,146 @@
 
 // All open tabs — populated by fetchOpenTabs()
 let openTabs = [];
+
+const REFRESH_SETTINGS_KEY = 'dashboardRefreshSettings';
+const REFRESH_INTERVALS = [30, 60, 90];
+const DEFAULT_REFRESH_SETTINGS = {
+  autoRefresh: false,
+  intervalSeconds: 60,
+};
+
+let dashboardRefreshSettings = { ...DEFAULT_REFRESH_SETTINGS };
+let dashboardRefreshTimer = null;
+let isDashboardRefreshing = false;
+
+function loadOptionalLocalConfig() {
+  const configUrl = chrome.runtime.getURL('config.local.js');
+
+  return fetch(configUrl)
+    .then(response => {
+      if (!response.ok) return undefined;
+
+      return new Promise(resolve => {
+        const script = document.createElement('script');
+        script.src = configUrl;
+        script.addEventListener('load', resolve, { once: true });
+        script.addEventListener('error', resolve, { once: true });
+        document.head.append(script);
+      });
+    })
+    .catch(() => undefined);
+}
+
+const optionalLocalConfigReady = loadOptionalLocalConfig();
+
+// Image errors do not bubble, so use capture mode for dynamically rendered favicons.
+document.addEventListener('error', event => {
+  const image = event.target;
+  if (image instanceof HTMLImageElement && image.matches('[data-hide-on-error]')) {
+    image.hidden = true;
+  }
+}, true);
+
+function normalizeRefreshSettings(settings = {}) {
+  const intervalSeconds = Number(settings.intervalSeconds);
+  return {
+    autoRefresh: settings.autoRefresh === true,
+    intervalSeconds: REFRESH_INTERVALS.includes(intervalSeconds)
+      ? intervalSeconds
+      : DEFAULT_REFRESH_SETTINGS.intervalSeconds,
+  };
+}
+
+function syncRefreshControls() {
+  const toggle = document.getElementById('autoRefreshToggle');
+  if (toggle) toggle.checked = dashboardRefreshSettings.autoRefresh;
+
+  document.querySelectorAll('[data-refresh-interval]').forEach(button => {
+    const interval = Number(button.dataset.refreshInterval);
+    const selected = interval === dashboardRefreshSettings.intervalSeconds;
+    button.classList.toggle('is-selected', selected);
+    button.setAttribute('aria-pressed', String(selected));
+    button.disabled = !dashboardRefreshSettings.autoRefresh;
+  });
+}
+
+function scheduleDashboardRefresh() {
+  if (dashboardRefreshTimer) {
+    clearInterval(dashboardRefreshTimer);
+    dashboardRefreshTimer = null;
+  }
+
+  if (!dashboardRefreshSettings.autoRefresh) return;
+
+  dashboardRefreshTimer = window.setInterval(() => {
+    refreshDashboard();
+  }, dashboardRefreshSettings.intervalSeconds * 1000);
+}
+
+async function loadRefreshSettings() {
+  try {
+    const stored = await chrome.storage.local.get(REFRESH_SETTINGS_KEY);
+    dashboardRefreshSettings = normalizeRefreshSettings(stored[REFRESH_SETTINGS_KEY]);
+  } catch {
+    dashboardRefreshSettings = { ...DEFAULT_REFRESH_SETTINGS };
+  }
+
+  syncRefreshControls();
+  scheduleDashboardRefresh();
+}
+
+async function saveRefreshSettings(nextSettings) {
+  const settings = normalizeRefreshSettings({
+    ...dashboardRefreshSettings,
+    ...nextSettings,
+  });
+
+  try {
+    await chrome.storage.local.set({ [REFRESH_SETTINGS_KEY]: settings });
+  } catch {
+    showToast('Could not save refresh settings');
+    syncRefreshControls();
+    return;
+  }
+
+  dashboardRefreshSettings = settings;
+  syncRefreshControls();
+  scheduleDashboardRefresh();
+}
+
+function setRefreshSettingsPanel(open) {
+  const panel = document.getElementById('refreshSettingsPanel');
+  const button = document.querySelector('[data-action="toggle-refresh-settings"]');
+  if (!panel || !button) return;
+
+  panel.hidden = !open;
+  button.setAttribute('aria-expanded', String(open));
+}
+
+async function refreshDashboard({ showFeedback = false } = {}) {
+  if (isDashboardRefreshing) return;
+
+  isDashboardRefreshing = true;
+  const refreshButton = document.querySelector('[data-action="refresh-dashboard"]');
+  if (refreshButton) {
+    refreshButton.disabled = true;
+    refreshButton.classList.add('is-refreshing');
+  }
+
+  try {
+    await renderDashboard();
+    if (showFeedback) showToast('Tab panel refreshed');
+  } catch (err) {
+    console.error('[tab-out] Failed to refresh tab panel:', err);
+    if (showFeedback) showToast('Could not refresh tab panel');
+  } finally {
+    if (refreshButton) {
+      refreshButton.disabled = false;
+      refreshButton.classList.remove('is-refreshing');
+    }
+    isDashboardRefreshing = false;
+  }
+}
 
 /**
  * fetchOpenTabs()
@@ -43,8 +184,10 @@ async function fetchOpenTabs() {
       id:       t.id,
       url:      t.url,
       title:    t.title,
+      favIconUrl: t.favIconUrl || '',
       windowId: t.windowId,
       active:   t.active,
+      lastAccessed: t.lastAccessed || 0,
       // Flag Tab Out's own pages so we can detect duplicate new tabs
       isTabOut: t.url === newtabUrl || t.url === 'chrome://newtab/',
     }));
@@ -223,7 +366,7 @@ async function closeTabOutDupes() {
  * saveTabForLater(tab)
  *
  * Saves a single tab to the "Saved for Later" list in chrome.storage.local.
- * @param {{ url: string, title: string }} tab
+ * @param {{ url: string, title: string, favIconUrl?: string }} tab
  */
 async function saveTabForLater(tab) {
   const { deferred = [] } = await chrome.storage.local.get('deferred');
@@ -231,6 +374,7 @@ async function saveTabForLater(tab) {
     id:        Date.now().toString(),
     url:       tab.url,
     title:     tab.title,
+    favIconUrl: tab.favIconUrl || '',
     savedAt:   new Date().toISOString(),
     completed: false,
     dismissed: false,
@@ -281,6 +425,15 @@ async function dismissSavedTab(id) {
     tab.dismissed = true;
     await chrome.storage.local.set({ deferred });
   }
+}
+
+/**
+ * Removes completed items from the saved-tab store.
+ * Active items and their state remain untouched.
+ */
+async function clearArchivedTabs() {
+  const { deferred = [] } = await chrome.storage.local.get('deferred');
+  await chrome.storage.local.set({ deferred: deferred.filter(t => !t.completed) });
 }
 
 
@@ -691,6 +844,28 @@ function smartTitle(title, url) {
   return title || url;
 }
 
+function getSafeFaviconUrl(tab) {
+  if (!tab || typeof tab.favIconUrl !== 'string') return '';
+  return tab.favIconUrl
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function getSavedFaviconUrl(item) {
+  const savedFaviconUrl = getSafeFaviconUrl(item);
+  if (savedFaviconUrl) return savedFaviconUrl;
+
+  // Existing saved items predate favicon persistence; retain their old fallback.
+  try {
+    const domain = new URL(item.url).hostname;
+    return domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
+  } catch {
+    return '';
+  }
+}
+
 
 /* ----------------------------------------------------------------
    SVG ICON STRINGS
@@ -765,17 +940,16 @@ function buildOverflowChips(hiddenTabs, urlCounts = {}) {
     const chipClass = count > 1 ? ' chip-has-dupes' : '';
     const safeUrl   = (tab.url || '').replace(/"/g, '&quot;');
     const safeTitle = label.replace(/"/g, '&quot;');
-    let domain = '';
-    try { domain = new URL(tab.url).hostname; } catch {}
-    const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
+    const tabId     = Number.isInteger(tab.id) ? String(tab.id) : '';
+    const faviconUrl = getSafeFaviconUrl(tab);
     return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
-      ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
+      ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" data-hide-on-error>` : ''}
       <span class="chip-text">${label}</span>${dupeTag}
       <div class="chip-actions">
-        <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
+        <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-id="${tabId}" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" /></svg>
         </button>
-        <button class="chip-action chip-close" data-action="close-single-tab" data-tab-url="${safeUrl}" title="Close this tab">
+        <button class="chip-action chip-close" data-action="close-single-tab" data-tab-id="${tabId}" data-tab-url="${safeUrl}" title="Close this tab">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
         </button>
       </div>
@@ -824,15 +998,10 @@ function renderDomainCard(group) {
       </span>`
     : '';
 
-  // Deduplicate for display: show each URL once, with (Nx) badge if duped
-  const seen = new Set();
-  const uniqueTabs = [];
-  for (const tab of tabs) {
-    if (!seen.has(tab.url)) { seen.add(tab.url); uniqueTabs.push(tab); }
-  }
-
-  const visibleTabs = uniqueTabs.slice(0, 8);
-  const extraCount  = uniqueTabs.length - visibleTabs.length;
+  // Render every physical tab so a refresh updates every visible tab.
+  // Duplicate URLs still receive their count badge and bulk-cleanup action.
+  const visibleTabs = tabs.slice(0, 8);
+  const extraCount  = tabs.length - visibleTabs.length;
 
   const pageChips = visibleTabs.map(tab => {
     let label = cleanTitle(smartTitle(stripTitleNoise(tab.title || ''), tab.url), group.domain);
@@ -846,22 +1015,21 @@ function renderDomainCard(group) {
     const chipClass = count > 1 ? ' chip-has-dupes' : '';
     const safeUrl   = (tab.url || '').replace(/"/g, '&quot;');
     const safeTitle = label.replace(/"/g, '&quot;');
-    let domain = '';
-    try { domain = new URL(tab.url).hostname; } catch {}
-    const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
+    const tabId     = Number.isInteger(tab.id) ? String(tab.id) : '';
+    const faviconUrl = getSafeFaviconUrl(tab);
     return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
-      ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
+      ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" data-hide-on-error>` : ''}
       <span class="chip-text">${label}</span>${dupeTag}
       <div class="chip-actions">
-        <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
+        <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-id="${tabId}" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" /></svg>
         </button>
-        <button class="chip-action chip-close" data-action="close-single-tab" data-tab-url="${safeUrl}" title="Close this tab">
+        <button class="chip-action chip-close" data-action="close-single-tab" data-tab-id="${tabId}" data-tab-url="${safeUrl}" title="Close this tab">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
         </button>
       </div>
     </div>`;
-  }).join('') + (extraCount > 0 ? buildOverflowChips(uniqueTabs.slice(8), urlCounts) : '');
+  }).join('') + (extraCount > 0 ? buildOverflowChips(tabs.slice(8), urlCounts) : '');
 
   let actionsHtml = `
     <button class="action-btn close-tabs" data-action="close-domain-tabs" data-domain-id="${stableId}">
@@ -966,7 +1134,7 @@ async function renderDeferredColumn() {
 function renderDeferredItem(item) {
   let domain = '';
   try { domain = new URL(item.url).hostname.replace(/^www\./, ''); } catch {}
-  const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=16`;
+  const faviconUrl = getSavedFaviconUrl(item);
   const ago = timeAgo(item.savedAt);
 
   return `
@@ -974,7 +1142,7 @@ function renderDeferredItem(item) {
       <input type="checkbox" class="deferred-checkbox" data-action="check-deferred" data-deferred-id="${item.id}">
       <div class="deferred-info">
         <a href="${item.url}" target="_blank" rel="noopener" class="deferred-title" title="${(item.title || '').replace(/"/g, '&quot;')}">
-          <img src="${faviconUrl}" alt="" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px" onerror="this.style.display='none'">${item.title || item.url}
+          ${faviconUrl ? `<img class="deferred-favicon" src="${faviconUrl}" alt="" data-hide-on-error>` : ''}<span class="deferred-title-text">${item.title || item.url}</span>
         </a>
         <div class="deferred-meta">
           <span>${domain}</span>
@@ -994,10 +1162,11 @@ function renderDeferredItem(item) {
  */
 function renderArchiveItem(item) {
   const ago = item.completedAt ? timeAgo(item.completedAt) : timeAgo(item.savedAt);
+  const faviconUrl = getSavedFaviconUrl(item);
   return `
     <div class="archive-item">
       <a href="${item.url}" target="_blank" rel="noopener" class="archive-item-title" title="${(item.title || '').replace(/"/g, '&quot;')}">
-        ${item.title || item.url}
+        ${faviconUrl ? `<img class="archive-favicon" src="${faviconUrl}" alt="" data-hide-on-error>` : ''}<span class="archive-title-text">${item.title || item.url}</span>
       </a>
       <span class="archive-item-date">${ago}</span>
     </div>`;
@@ -1188,6 +1357,24 @@ document.addEventListener('click', async (e) => {
 
   const action = actionEl.dataset.action;
 
+  if (action === 'refresh-dashboard') {
+    await refreshDashboard({ showFeedback: true });
+    return;
+  }
+
+  if (action === 'toggle-refresh-settings') {
+    const panel = document.getElementById('refreshSettingsPanel');
+    setRefreshSettingsPanel(panel ? panel.hidden : true);
+    return;
+  }
+
+  if (action === 'set-refresh-interval') {
+    const intervalSeconds = Number(actionEl.dataset.refreshInterval);
+    if (!REFRESH_INTERVALS.includes(intervalSeconds)) return;
+    await saveRefreshSettings({ intervalSeconds });
+    return;
+  }
+
   // ---- Close duplicate Tab Out tabs ----
   if (action === 'close-tabout-dupes') {
     await closeTabOutDupes();
@@ -1198,7 +1385,7 @@ document.addEventListener('click', async (e) => {
       banner.style.opacity = '0';
       setTimeout(() => { banner.style.display = 'none'; banner.style.opacity = '1'; }, 400);
     }
-    showToast('Closed extra Tab Out tabs');
+    showToast('Closed extra Tabs Mgr. tabs');
     return;
   }
 
@@ -1228,8 +1415,11 @@ document.addEventListener('click', async (e) => {
     if (!tabUrl) return;
 
     // Close the tab in Chrome directly
+    const tabId   = Number.parseInt(actionEl.dataset.tabId, 10);
     const allTabs = await chrome.tabs.query({});
-    const match   = allTabs.find(t => t.url === tabUrl);
+    const match   = Number.isInteger(tabId)
+      ? allTabs.find(t => t.id === tabId)
+      : allTabs.find(t => t.url === tabUrl);
     if (match) await chrome.tabs.remove(match.id);
     await fetchOpenTabs();
 
@@ -1271,18 +1461,26 @@ document.addEventListener('click', async (e) => {
     const tabTitle = actionEl.dataset.tabTitle || tabUrl;
     if (!tabUrl) return;
 
-    // Save to chrome.storage.local
+    const tabId   = Number.parseInt(actionEl.dataset.tabId, 10);
+    const allTabs = await chrome.tabs.query({});
+    const match   = Number.isInteger(tabId)
+      ? allTabs.find(t => t.id === tabId)
+      : allTabs.find(t => t.url === tabUrl);
+
+    // Save to chrome.storage.local before closing the source tab.
     try {
-      await saveTabForLater({ url: tabUrl, title: tabTitle });
+      await saveTabForLater({
+        url: tabUrl,
+        title: tabTitle,
+        favIconUrl: match?.favIconUrl || '',
+      });
     } catch (err) {
       console.error('[tab-out] Failed to save tab:', err);
       showToast('Failed to save tab');
       return;
     }
 
-    // Close the tab in Chrome
-    const allTabs = await chrome.tabs.query({});
-    const match   = allTabs.find(t => t.url === tabUrl);
+    // Close the exact source tab in Chrome.
     if (match) await chrome.tabs.remove(match.id);
     await fetchOpenTabs();
 
@@ -1431,6 +1629,34 @@ document.addEventListener('click', async (e) => {
     showToast('All tabs closed. Fresh start.');
     return;
   }
+
+  if (action === 'clear-archive') {
+    const { archived } = await getSavedTabs();
+    if (archived.length === 0) return;
+
+    const confirmed = window.confirm(`Clear ${archived.length} archived tab${archived.length !== 1 ? 's' : ''}? This cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+      await clearArchivedTabs();
+      await renderDeferredColumn();
+      showToast('Archive cleared');
+    } catch (err) {
+      console.error('[tab-out] Failed to clear archive:', err);
+      showToast('Could not clear archive');
+    }
+    return;
+  }
+});
+
+document.addEventListener('change', async (e) => {
+  if (e.target.id !== 'autoRefreshToggle') return;
+  await saveRefreshSettings({ autoRefresh: e.target.checked });
+});
+
+document.addEventListener('click', (e) => {
+  const settings = e.target.closest('.refresh-settings');
+  if (!settings) setRefreshSettingsPanel(false);
 });
 
 // ---- Archive toggle — expand/collapse the archive section ----
@@ -1479,4 +1705,10 @@ document.addEventListener('input', async (e) => {
 /* ----------------------------------------------------------------
    INITIALIZE
    ---------------------------------------------------------------- */
-renderDashboard();
+async function initializeDashboard() {
+  await optionalLocalConfigReady;
+  await loadRefreshSettings();
+  await refreshDashboard();
+}
+
+initializeDashboard();

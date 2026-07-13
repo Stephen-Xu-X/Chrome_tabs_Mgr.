@@ -3,11 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tab Out</title>
+  <title>Tabs Mgr.</title>
 
-  <!-- Google Fonts: Newsreader (for headings/numbers) + DM Sans (for body text) -->
+  <!-- Creative Mode typography: display, metadata, and body registers -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=JetBrains+Mono:wght@400;500&family=Noto+Serif+SC:wght@400;900&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <link rel="stylesheet" href="style.css">
 </head>
@@ -26,10 +27,49 @@
       <!-- "Friday, April 4, 2026" — written by getDateDisplay() in app.js -->
       <div class="date" id="dateDisplay"></div>
     </div>
+    <div class="header-actions">
+      <div class="header-tab-count" aria-label="Open tabs">
+        <div class="stat">
+          <div class="stat-num" id="statTabs">—</div>
+          <div class="stat-label">Open tabs</div>
+        </div>
+      </div>
+      <button class="header-icon-button" type="button" data-action="refresh-dashboard" aria-label="Refresh tab panel" title="Refresh tab panel">
+        <svg t="1783913459760" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="5115" width="200" height="200" aria-hidden="true">
+          <path d="M512 888c-13.6 0-24-10.4-24-24s10.4-24 24-24c180.8 0 328-147.2 328-328 0-83.2-31.2-162.4-88-224-8.8-9.6-8-24.8 1.6-33.6s24.8-8 33.6 1.6c64.8 70.4 100.8 161.6 100.8 256 0 207.2-168.8 376-376 376zM256.8 778.4c-6.4 0-12.8-2.4-17.6-7.2C172.8 700.8 136 608.8 136 512c0-207.2 168.8-376 376-376 13.6 0 24 10.4 24 24s-10.4 24-24 24c-180.8 0-328 147.2-328 328 0 84 32 164.8 90.4 225.6 8.8 9.6 8.8 24.8-0.8 33.6-4.8 4.8-11.2 7.2-16.8 7.2z" fill="#999999" p-id="5116"></path>
+          <path d="M428 316c-4.8 0-8.8-1.6-12.8-4-11.2-7.2-14.4-21.6-7.2-32.8l84-132c7.2-11.2 21.6-14.4 32.8-7.2 11.2 7.2 14.4 21.6 7.2 32.8L448 304.8c-4 7.2-12 11.2-20 11.2zM513.6 886.4c-4.8 0-8.8-1.6-12.8-4-11.2-7.2-14.4-21.6-7.2-32.8l84-132c7.2-11.2 21.6-14.4 32.8-7.2 11.2 7.2 14.4 21.6 7.2 32.8l-84 132c-4 7.2-12 11.2-20 11.2z" fill="#999999" p-id="5117"></path>
+        </svg>
+      </button>
+      <div class="refresh-settings">
+        <button class="header-icon-button" type="button" data-action="toggle-refresh-settings" aria-label="Refresh settings" aria-controls="refreshSettingsPanel" aria-expanded="false" title="Refresh settings">
+          <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.062.374.313.686.649.874.074.042.147.085.22.13.324.2.722.24 1.07.123l1.186-.395a1.125 1.125 0 0 1 1.256.458l1.3 2.25a1.125 1.125 0 0 1-.145 1.322l-.971.97c-.273.274-.396.66-.333 1.038a6.7 6.7 0 0 1 0 .255c-.063.378.06.764.333 1.039l.971.97c.37.37.427.947.145 1.322l-1.3 2.25a1.125 1.125 0 0 1-1.256.458l-1.186-.395c-.348-.116-.746-.077-1.07.123a6.4 6.4 0 0 1-.22.13c-.336.188-.587.5-.649.874l-.213 1.281c-.09.542-.56.94-1.11.94h-2.593c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.313-.686-.649-.874a6.4 6.4 0 0 1-.22-.13c-.324-.2-.722-.24-1.07-.123l-1.186.395a1.125 1.125 0 0 1-1.256-.458l-1.3-2.25a1.125 1.125 0 0 1 .145-1.322l.971-.97c.273-.275.396-.66.333-1.039a6.7 6.7 0 0 1 0-.255c.063-.378-.06-.764-.333-1.039l-.971-.97a1.125 1.125 0 0 1-.145-1.322l1.3-2.25a1.125 1.125 0 0 1 1.256-.458l1.186.395c.348.117.746.077 1.07-.123.072-.045.146-.088.22-.13.336-.188.587-.5.649-.874l.213-1.281Z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+          </svg>
+        </button>
+        <div class="refresh-settings-panel" id="refreshSettingsPanel" hidden>
+          <div class="refresh-setting-row">
+            <span id="autoRefreshLabel">Auto-refresh</span>
+            <label class="refresh-switch" aria-labelledby="autoRefreshLabel">
+              <input id="autoRefreshToggle" type="checkbox" aria-label="Enable auto-refresh">
+              <span class="refresh-switch-track" aria-hidden="true"></span>
+            </label>
+          </div>
+          <div class="refresh-interval-control" aria-labelledby="refreshIntervalLabel">
+            <span id="refreshIntervalLabel">Refresh every</span>
+            <div class="refresh-interval-options" role="group" aria-label="Auto-refresh interval">
+              <button class="refresh-interval-option" type="button" data-action="set-refresh-interval" data-refresh-interval="30" aria-pressed="false">30s</button>
+              <button class="refresh-interval-option" type="button" data-action="set-refresh-interval" data-refresh-interval="60" aria-pressed="false">60s</button>
+              <button class="refresh-interval-option" type="button" data-action="set-refresh-interval" data-refresh-interval="90" aria-pressed="false">90s</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </header>
 
   <!-- ================================================================
-       TAB OUT DUPES BANNER — appears when you have extra Tab Out tabs open
+       DUPLICATE NEW-TAB BANNER — appears when you have extra Tabs Mgr. tabs open
        Hidden by default; app.js shows it when dupeTabOutCount > 1
        ================================================================ -->
   <div class="tab-cleanup-banner" id="tabOutDupeBanner" style="display:none">
@@ -40,7 +80,7 @@
         </svg>
       </div>
       <div class="tab-cleanup-text">
-        You have <strong id="tabOutDupeCount"></strong> Tab Out tabs open. Keep just this one?
+        You have <strong id="tabOutDupeCount"></strong> Tabs Mgr. tabs open. Keep just this one?
       </div>
     </div>
     <button class="tab-cleanup-btn" data-action="close-tabout-dupes">Close extras</button>
@@ -82,11 +122,16 @@
 
       <!-- Archive section — collapsed by default -->
       <div class="deferred-archive" id="deferredArchive" style="display:none">
-        <button class="archive-toggle" id="archiveToggle">
-          <svg class="archive-chevron" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
-          Archive
-          <span class="archive-count" id="archiveCount"></span>
-        </button>
+        <div class="archive-header">
+          <button class="archive-toggle" id="archiveToggle">
+            <svg class="archive-chevron" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+            Archive
+            <span class="archive-count" id="archiveCount"></span>
+          </button>
+          <button class="archive-clear" type="button" data-action="clear-archive" aria-label="Clear archived tabs" title="Clear archived tabs">
+            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.165m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.134-2.032-2.172a48.424 48.424 0 0 0-3.436 0C9.16 2.343 8.25 3.297 8.25 4.477v.916m7.5 0a48.664 48.664 0 0 0-7.5 0" /></svg>
+          </button>
+        </div>
         <div class="archive-body" id="archiveBody" style="display:none">
           <input type="text" class="archive-search" id="archiveSearch" placeholder="Search archived tabs...">
           <div class="archive-list" id="archiveList"></div>
@@ -100,14 +145,11 @@
        FOOTER — global stats + refresh control
        ================================================================ -->
   <footer>
-    <div class="footer-stats">
-      <div class="stat">
-        <div class="stat-num" id="statTabs">—</div>
-        <div class="stat-label">Open tabs</div>
-      </div>
+    <div class="footer-attribution">
+      Fork from <a href="https://github.com/zarazhangrui/tab-out" target="_blank" rel="noopener">Tab Out</a> by <a href="https://x.com/zarazhangrui" target="_blank" rel="noopener">Zara</a>
     </div>
-    <div class="last-refresh">
-      <span style="color: var(--muted); font-size: 11px;"><a href="https://github.com/zarazhangrui/tab-out" target="_top" style="color: var(--muted); text-decoration: underline; text-underline-offset: 2px;">Tab Out</a> by <a href="https://x.com/zarazhangrui" target="_top" style="color: var(--muted); text-decoration: underline; text-underline-offset: 2px;">Zara</a></span>
+    <div class="footer-attribution footer-repo">
+      <a href="https://github.com/Stephen-Xu-X/Chrome_tabs_Mgr." target="_blank" rel="noopener">Chrome_tabs_Mgr.</a> by <a href="https://github.com/Stephen-Xu-X" target="_blank" rel="noopener">Stephen-Xu-X</a>
     </div>
   </footer>
 
@@ -124,10 +166,6 @@
   </svg>
   <span id="toastText"></span>
 </div>
-
-<!-- Personal config (gitignored) — defines LOCAL_LANDING_PAGE_PATTERNS etc. -->
-<!-- If the file doesn't exist, that's fine — app.js uses sensible defaults. -->
-<script src="config.local.js" onerror="/* no personal config, that's fine */"></script>
 
 <!-- Main dashboard logic — loads last so the DOM is ready -->
 <script src="app.js"></script>
