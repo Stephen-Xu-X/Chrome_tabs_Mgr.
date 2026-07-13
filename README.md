@@ -29,6 +29,6 @@
 
 本项目沿用上游 Tab Out 的 [MIT License](LICENSE)。
 
-## Star History
+## Stars
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Stephen-Xu-X/Chrome_tabs_Mgr.&type=Date)](https://star-history.com/#Stephen-Xu-X/Chrome_tabs_Mgr.&Date)
+[![GitHub Stars](https://img.shields.io/github/stars/Stephen-Xu-X/Chrome_tabs_Mgr.?style=flat-square)](https://github.com/Stephen-Xu-X/Chrome_tabs_Mgr./stargazers)
